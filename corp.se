@@ -1,0 +1,66 @@
+# Stored variables
+TRANSFER_MSG = 1
+BALANCE_MSG = 2
+DIVIDEND_MSG = 3
+SHARES = 100000
+
+ADDRESSES_IDX = 2^160
+
+# 0 : number of shareholders 
+# 1 : stock issuing address 
+# 2 : addresses and shares 
+
+# 2^160 + 3x : hash
+# 2^160 + 3x + 1: shares
+# 2^160 + 3x + 2: address
+init:
+  contract.storage[1] = 0
+  contract.storage[ADDRESSES_IDX] = msg.sender
+  contract.storage[msg.sender] = SHARES 
+
+# Message Types
+# 1: Transfer Stock
+# 2: Receive payment
+code:
+  msg_type = msg.data[0]
+  # Transferring stock 
+  # [1, receiver_address, quantity]
+  if msg_type == TRANSFER_MSG:
+    msg.sender
+    sender_holdings = contract.storage[msg.sender]
+
+    to = msg.data[1]
+    transfer_quantity = msg.data[2]
+    if sender_holdings >= transfer_quantity:
+      # If sender doesn't exist yet, we add their address
+      if contract.storage[to] == 0:
+        contract.storage[1] = contract.storage[1] + 1
+        contract.storage[ADDRESSES_IDX + contract.storage[1]] = to
+
+      contract.storage[msg.sender] = sender_holdings - transfer_quantity
+      contract.storage[to] = contract.storage[to] + transfer_quantity
+      return(contract.storage[msg.sender])
+    else
+      return(0)
+  
+  # Checking stock balance 
+  # [2]
+  elif msg_type == BALANCE_MSG:
+    return(contract.storage[msg.sender])
+
+  # Paying dividends 
+  # [3]
+  elif msg_type == DIVIDEND_MSG:
+    if msg.sender == contract.storage[ADDRESSES_IDX]:
+      total_dispursement = contract.balance
+      num_addresses = contract.storage[1]
+      i = 0
+      while i <= num_addresses:
+        add = contract.storage[ADDRESSES_IDX + i]
+        add_shares = contract.storage[add]
+        dispursement = (total_dispursement*add_shares/SHARES)
+        send(add, dispursement)
+        i += 1
+      return(total_dispursement)
+    else:
+      return(msg.value)
