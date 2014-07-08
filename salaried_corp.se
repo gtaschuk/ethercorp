@@ -1,0 +1,140 @@
+# Stored variables
+TRANSFER_MSG = 1
+BALANCE_MSG = 2
+DIVIDEND_MSG = 3
+SET_SALARY_MSG = 4
+CONTRACT_BALANCE_MSG = 5
+PAY_SALARIES_MSG = 6
+CHECK_SALARY_MSG = 7
+SHARES = 100000
+
+ADDRESSES_IDX = 2^160
+SALARY_IDX = 2^170
+NUM_SHAREHOLDERS_IDX = 1
+LAST_PAID_BLOCK = 1
+
+SALARY_INTERVAL = 60
+
+# 0 : number of shareholders 
+# 1 : stock issuing address 
+# 2 : addresses and shares 
+
+
+# Starting at addresses_idx we have each address index
+# Starting at contract.storage(user_address) we have 3 entries
+#   - the users shares
+#   - the users salary
+#   - the last time the user was paid a salary
+#
+init:
+  contract.storage[NUM_SHAREHOLDERS_IDX] = 0
+  contract.storage[ADDRESSES_IDX] = msg.sender
+  contract.storage[msg.sender] = SHARES 
+
+# Message Types
+# 1: Transfer Stock
+# 2: Receive payment
+code:
+  msg_type = msg.data[0]
+  #########################################################
+  # Transferring stock 
+  # [1, receiver_address, quantity]
+  #########################################################
+  if msg_type == TRANSFER_MSG:
+    recipient = msg.data[1]
+    transfer_quantity = msg.data[2]
+
+    sender_holdings = contract.storage[msg.sender + 1]
+    if sender_holdings >= transfer_quantity:
+      if contract.storage[recipient] != 1:
+        contract.storage[recipient] = 1
+        new_user_count = contract.storage[NUM_SHAREHOLDERS_IDX] + 1 
+        contract.storage[ADDRESSES_IDX + new_user_count] = recipient 
+
+      contract.storage[msg.sender + 1] = sender_holdings - transfer_quantity
+      contract.storage[recipient + 1] = contract.storage[recipient + 1] + transfer_quantity
+      return(contract.storage[msg.sender])
+    else
+      return(-1)
+
+  #########################################################
+  # Setting salary 
+  # [4]
+  #########################################################
+  elif msg_type == SET_SALARY_MSG:
+    if msg.sender == contract.storage[ADDRESSES_IDX]:
+      employee = msg.data[1]
+      daily_salary = msg.data[2]
+      # check that they are neither salaried nor stakeholders
+      if contract.storage[employee] == 0: # && contract.storage[employee + 1] == 0:
+        contract.storage[employee] = 1
+        new_user_count = contract.storage[NUM_SHAREHOLDERS_IDX] + 1 
+        contract.storage[NUM_SHAREHOLDERS_IDX] = new_user_count 
+        contract.storage[ADDRESSES_IDX + new_user_count] = employee 
+        contract.storage[employee + 3] = block.number 
+      contract.storage[employee + 2] = daily_salary 
+      return(contract.storage[employee+2])
+    else
+      return(0)
+
+  #########################################################
+  # Paying dividends 
+  # [3]
+  #########################################################
+  elif msg_type == DIVIDEND_MSG:
+    # if user is the first user
+    if msg.sender == contract.storage[ADDRESSES_IDX]:
+      total_dispursement = contract.balance
+      num_addresses = contract.storage[NUM_SHAREHOLDERS_IDX]
+      i = 0
+      while i <= num_addresses:
+        add = contract.storage[ADDRESSES_IDX + i]
+        add_shares = contract.storage[add + 1]
+        dispursement = (total_dispursement*add_shares/SHARES)
+        send(add, dispursement)
+        i += 1
+      return(total_dispursement)
+    else:
+      return(msg.value)
+
+  #########################################################
+  # Paying salary 
+  # [6]
+  #########################################################
+  elif msg_type == PAY_SALARIES_MSG:
+    if msg.sender == contract.storage[ADDRESSES_IDX]:
+      num_addresses = contract.storage[NUM_SHAREHOLDERS_IDX]
+      i = 0
+      while i <= num_addresses:
+        add = contract.storage[ADDRESSES_IDX + i]
+
+        salary = contract.storage[add + 2] 
+        last_paid = contract.storage[add + 3]
+
+        days = (block.number-last_paid)/(SALARY_INTERVAL)
+        contract.storage[add+3] = last_paid + days*SALARY_INTERVAL
+        if salary > 0:
+          send(add, days*salary)
+        i += 1
+      return(contract.balance)
+   
+  #########################################################
+  # Checking stock balance 
+  # [2]
+  #########################################################
+  elif msg_type == BALANCE_MSG:
+    return(contract.storage[msg.sender + 1])
+ 
+  #########################################################
+  # Checking company account
+  # [5]
+  #########################################################
+  elif msg_type == CONTRACT_BALANCE_MSG:
+    return(contract.balance)
+
+  #########################################################
+  # Checking salary
+  # [7]
+  #########################################################
+  elif msg_type == CHECK_SALARY_MSG:
+    return(contract.storage[msg.sender + 2])
